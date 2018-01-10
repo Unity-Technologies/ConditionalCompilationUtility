@@ -10,8 +10,8 @@ namespace ConditionalCompilation
 {
     /// <summary>
     /// The Conditional Compilation Utility (CCU) will add defines to the build settings once dependendent classes have been detected. 
-    /// In order for this to be specified in any project without the project needing to include the CCU, at least one custom attribute 
-    /// must be created in the following form:
+    /// A goal of the CCU was to not require the CCU itself for other libraries to specify optional dependencies. So, it relies on the 
+    /// specification of at least one custom attribute in a project that makes use of it. Here is an example:
     ///
     /// [Conditional(UNITY_CCU)]                                    // | This is necessary for CCU to pick up the right attributes
     /// public class OptionalDependencyAttribute : Attribute        // | Must derive from System.Attribute
@@ -20,7 +20,7 @@ namespace ConditionalCompilation
     ///     public string define;                                   // | Required field specifying the define to add
     /// }
     ///
-    /// Then, simply specify the assembly attribute(s) you created:
+    /// Then, simply specify the assembly attribute(s) you created in any of your C# files:
     /// [assembly: OptionalDependency("UnityEngine.InputNew.InputSystem", "USE_NEW_INPUT")]
     /// [assembly: OptionalDependency("Valve.VR.IVRSystem", "ENABLE_STEAMVR_INPUT")]
     ///
