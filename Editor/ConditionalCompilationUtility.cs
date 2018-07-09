@@ -1,4 +1,5 @@
-﻿using System;
+﻿#if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -174,3 +175,4 @@ namespace ConditionalCompilation
         }
     }
 }
+#endif
