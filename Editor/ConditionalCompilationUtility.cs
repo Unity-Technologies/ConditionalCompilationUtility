@@ -5,6 +5,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.Compilation;
+using UnityEditor.Experimental;
+using UnityEngine.Networking;
+using Assembly = System.Reflection.Assembly;
 using Debug = UnityEngine.Debug;
 
 namespace ConditionalCompilation
@@ -48,7 +52,39 @@ namespace ConditionalCompilation
 
         static ConditionalCompilationUtility()
         {
+#if UNITY_2017_3_OR_NEWER
+            var ccuWasReset = false;
+            CompilationPipeline.assemblyCompilationFinished += (outputPath, compilerMessages) =>
+            {
+                var errorCount = compilerMessages.Count(m => m.type == CompilerMessageType.Error);
+                if (errorCount > 0 && !ccuWasReset)
+                {
+                    // Since there were errors in compilation, try removing any dependency defines
+                    UpdateDependencies(true);
+                    ccuWasReset = true;
+                }
+            };
+
+            AssemblyReloadEvents.afterAssemblyReload += () =>
+            {
+                if (!ccuWasReset)
+                    UpdateDependencies();
+            };
+#else
+            UpdateDependencies();
+#endif
+        }
+
+        static void UpdateDependencies(bool reset = false)
+        {
             var buildTargetGroup = EditorUserBuildSettings.selectedBuildTargetGroup;
+            if (buildTargetGroup == BuildTargetGroup.Unknown)
+            {
+                var propertyInfo = typeof(EditorUserBuildSettings).GetProperty("activeBuildTargetGroup", BindingFlags.Static | BindingFlags.NonPublic);
+                if (propertyInfo != null)
+                    buildTargetGroup = (BuildTargetGroup)propertyInfo.GetValue(null, null);
+            }
+
             var defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(buildTargetGroup).Split(';').ToList();
             if (!defines.Contains(k_EnableCCU, StringComparer.OrdinalIgnoreCase))
             {
@@ -87,8 +123,9 @@ namespace ConditionalCompilation
                             Debug.LogErrorFormat("[CCU] Attribute type {0} missing field: {1}", type.Name, kDefine);
                             return false;
                         }
+
+                        return true;
                     }
-                    return true;
                 }
 
                 return false;
@@ -114,14 +151,17 @@ namespace ConditionalCompilation
                 }
             });
 
+
             ForEachAssembly(assembly =>
             {
                 foreach (var dependency in dependencies)
                 {
-                    var type = assembly.GetType(dependency.Key);
+                    var typeName = dependency.Key;
+                    var define = dependency.Value;
+
+                    var type = assembly.GetType(typeName);
                     if (type != null)
                     {
-                        var define = dependency.Value;
                         if (!defines.Contains(define, StringComparer.OrdinalIgnoreCase))
                             defines.Add(define);
 
@@ -129,6 +169,17 @@ namespace ConditionalCompilation
                     }
                 }
             });
+
+            if (reset)
+            {
+                foreach (var define in dependencies.Values)
+                {
+                    defines.Remove(define);
+                }
+
+                ccuDefines.Clear();
+                ccuDefines.Add(k_EnableCCU);
+            }
 
             ConditionalCompilationUtility.defines = ccuDefines.ToArray();
 
