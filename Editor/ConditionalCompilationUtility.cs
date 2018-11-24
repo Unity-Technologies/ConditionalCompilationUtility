@@ -12,8 +12,8 @@ using Debug = UnityEngine.Debug;
 namespace ConditionalCompilation
 {
     /// <summary>
-    /// The Conditional Compilation Utility (CCU) will add defines to the build settings once dependendent classes have been detected. 
-    /// A goal of the CCU was to not require the CCU itself for other libraries to specify optional dependencies. So, it relies on the 
+    /// The Conditional Compilation Utility (CCU) will add defines to the build settings once dependendent classes have been detected.
+    /// A goal of the CCU was to not require the CCU itself for other libraries to specify optional dependencies. So, it relies on the
     /// specification of at least one custom attribute in a project that makes use of it. Here is an example:
     ///
     /// [Conditional(UNITY_CCU)]                                    // | This is necessary for CCU to pick up the right attributes
@@ -54,7 +54,7 @@ namespace ConditionalCompilation
             var ccuWasReset = false;
             CompilationPipeline.assemblyCompilationFinished += (outputPath, compilerMessages) =>
             {
-                var errorCount = compilerMessages.Count(m => m.type == CompilerMessageType.Error);
+                var errorCount = compilerMessages.Count(m => m.type == CompilerMessageType.Error && m.message.Contains("CS0246"));
                 if (errorCount > 0 && !ccuWasReset)
                 {
                     // Since there were errors in compilation, try removing any dependency defines
