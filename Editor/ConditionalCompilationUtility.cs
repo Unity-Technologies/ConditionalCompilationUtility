@@ -8,6 +8,7 @@ using UnityEditor;
 using UnityEditor.Compilation;
 using Assembly = System.Reflection.Assembly;
 using Debug = UnityEngine.Debug;
+using System.Threading;
 
 namespace ConditionalCompilation
 {
@@ -33,8 +34,9 @@ namespace ConditionalCompilation
     /// }
     /// </summary>
     [InitializeOnLoad]
-    public static class ConditionalCompilationUtility
+    static class ConditionalCompilationUtility
     {
+        const string k_PreviousUnsuccessfulDefines = "ConditionalCompilationUtility.PreviousUnsuccessfulDefines";
         const string k_EnableCCU = "UNITY_CCU";
 
         public static bool enabled
@@ -51,21 +53,29 @@ namespace ConditionalCompilation
         static ConditionalCompilationUtility()
         {
 #if UNITY_2017_3_OR_NEWER
-            var ccuWasReset = false;
+            var errorsFound = false;
             CompilationPipeline.assemblyCompilationFinished += (outputPath, compilerMessages) =>
             {
                 var errorCount = compilerMessages.Count(m => m.type == CompilerMessageType.Error && m.message.Contains("CS0246"));
-                if (errorCount > 0 && !ccuWasReset)
+                if (errorCount > 0 && !errorsFound)
                 {
-                    // Since there were errors in compilation, try removing any dependency defines
-                    UpdateDependencies(true);
-                    ccuWasReset = true;
+                    var previousDefines = EditorPrefs.GetString(k_PreviousUnsuccessfulDefines);
+                    var currentDefines = string.Join(";", defines);
+                    if (currentDefines != previousDefines)
+                    {
+                        // Store the last set of unsuccessful defines to avoid ping-ponging
+                        EditorPrefs.SetString(k_PreviousUnsuccessfulDefines, currentDefines);
+
+                        // Since there were errors in compilation, try removing any dependency defines
+                        UpdateDependencies(true);
+                    }
+                    errorsFound = true;
                 }
             };
 
             AssemblyReloadEvents.afterAssemblyReload += () =>
             {
-                if (!ccuWasReset)
+                if (!errorsFound)
                     UpdateDependencies();
             };
 #else
@@ -83,13 +93,21 @@ namespace ConditionalCompilation
                     buildTargetGroup = (BuildTargetGroup)propertyInfo.GetValue(null, null);
             }
 
-            var defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(buildTargetGroup).Split(';').ToList();
-            if (!defines.Contains(k_EnableCCU, StringComparer.OrdinalIgnoreCase))
+            var previousProjectDefines = PlayerSettings.GetScriptingDefineSymbolsForGroup(buildTargetGroup);
+            var projectDefines = previousProjectDefines.Split(';').ToList();
+            if (!projectDefines.Contains(k_EnableCCU, StringComparer.OrdinalIgnoreCase))
             {
-                defines.Add(k_EnableCCU);
-                PlayerSettings.SetScriptingDefineSymbolsForGroup(buildTargetGroup, string.Join(";", defines.ToArray()));
+                EditorApplication.LockReloadAssemblies();
+
+                projectDefines.Add(k_EnableCCU);
 
                 // This will trigger another re-compile, which needs to happen, so all the custom attributes will be visible
+                PlayerSettings.SetScriptingDefineSymbolsForGroup(buildTargetGroup, string.Join(";", projectDefines.ToArray()));
+
+                // Let other systems execute before reloading assemblies
+                Thread.Sleep(1000);
+                EditorApplication.UnlockReloadAssemblies();
+
                 return;
             }
 
@@ -160,8 +178,8 @@ namespace ConditionalCompilation
                     var type = assembly.GetType(typeName);
                     if (type != null)
                     {
-                        if (!defines.Contains(define, StringComparer.OrdinalIgnoreCase))
-                            defines.Add(define);
+                        if (!projectDefines.Contains(define, StringComparer.OrdinalIgnoreCase))
+                            projectDefines.Add(define);
 
                         ccuDefines.Add(define);
                     }
@@ -172,7 +190,7 @@ namespace ConditionalCompilation
             {
                 foreach (var define in dependencies.Values)
                 {
-                    defines.Remove(define);
+                    projectDefines.Remove(define);
                 }
 
                 ccuDefines.Clear();
@@ -181,7 +199,9 @@ namespace ConditionalCompilation
 
             ConditionalCompilationUtility.defines = ccuDefines.ToArray();
 
-            PlayerSettings.SetScriptingDefineSymbolsForGroup(buildTargetGroup, string.Join(";", defines.ToArray()));
+            var newDefines = string.Join(";", projectDefines.ToArray());
+            if (previousProjectDefines != newDefines)
+                PlayerSettings.SetScriptingDefineSymbolsForGroup(buildTargetGroup, newDefines);
         }
 
         static void ForEachAssembly(Action<Assembly> callback)
