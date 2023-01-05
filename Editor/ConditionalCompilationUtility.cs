@@ -213,7 +213,7 @@ namespace ConditionalCompilation
                 {
                     callback(assembly);
                 }
-                catch (ReflectionTypeLoadException)
+                catch (Exception ex) when (ex is ReflectionTypeLoadException || ex is TypeLoadException)
                 {
                     // Skip any assemblies that don't load properly
                     continue;
