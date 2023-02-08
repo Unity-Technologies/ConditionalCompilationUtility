@@ -186,6 +186,13 @@ namespace ConditionalCompilation
                 }
             });
 
+            // Remove scripting symbols for optional dependencies that have been removed.
+            foreach (var define in dependencies.Values)
+            {
+                if (projectDefines.Contains(define) && !ccuDefines.Contains(define))
+                    projectDefines.Remove(define);
+            }
+
             if (reset)
             {
                 foreach (var define in dependencies.Values)
